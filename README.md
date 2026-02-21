@@ -1,4 +1,5 @@
 note: remember to download nvidia cuda 12.1 and add the path to .env(create that file and add it to .gitignore)
+\n
 use this to run the test:
 code>python -m pytest src/test.py    
 ## Setup (Windows CMD)
