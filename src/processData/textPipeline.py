@@ -189,6 +189,7 @@ def book_process(text):
                         buffer = score
                         primary = (start, end)
                     # we only record link if primary is out of buffer zone to avoid checking primary in 2 different doc but actually same word, we can just link that using overlapping cluster
+                    #fix, streamline child_cluster linking directly into global_ent for easier access
                     cur_sent = get_local_sent_idx(start, context["local_sent_spans"])
                     if 1 < cur_sent < 19:
                         buffer_ent = check_depend(doc, start, end)
@@ -197,18 +198,16 @@ def book_process(text):
                         
                 #all we care is: for doc of id x, what clusters it has, and what is the primary of that cluster (tuple position)
                 if buffer_ent != None:
-                    cluster_container.append({
+                    for ent in global_ent:
+                        if ent["doc_id"] == doc.id and ent["doc_token_pos"] == (buffer_ent.start, buffer_ent.end):
+                        # Inject the new data element into 
+                            ent["child_cluster"] = cluster_id
+   
+                cluster_container.append({
                     "doc_id": doc_id,
                     "cluster_id": cluster_id,
-                    "primary": primary,
-                    "parent": (buffer_ent.start_char, buffer_ent.end_char)
-                })    
-                else:    
-                    cluster_container.append({
-                        "doc_id": doc_id,
-                        "cluster_id": cluster_id,
-                        "primary": primary
-                    })
+                    "primary": primary
+                })
 
         # Clear RAM
         try:
@@ -219,6 +218,18 @@ def book_process(text):
 
 
 #TODO: CHECK CODE, need to fix this into method fittable to run with current pipeline
+#This code requirements:  
+# 1.fuzzy the global_ent to get a list of unique person we can use (5-7 is enough), but they must be unique
+#   i.run a simple 
+# 2.for each of the unique person we get: 
+#   i.use fuzzy to check global_ent against each unique person |||| example logic: for i, ent in enumerated(global_ent): if fuzzyFunct(ent.get("text")) == true: add index to that unique name bucket under list "ent"
+#   ii.for the ent above, check if we have "child_cluster" in ent, if they do, use the same above logic but with cluster_id to get the index from cluster_container, and add that index to this unique name bucket in list "cluster"
+# 3.once we get registry done, we will proceed to work with dups:
+#   i.for each unique person bucket, make 2 sets: ent_index and cluster_index
+#   ii.for each of the 2 set:
+#       I.compare the set between 2 unique person using intersection of sets
+#       II.for simplicity, if intersect in ent_index at all, we will merge those 2 unique person bucket to create a new entry in the registry
+#       III.meanwhile, if cluster set intersect pass a certain percentage, say 40-50? we also merge the 2 unique person bucket in the registry
 
 # 1. To track counts: { "Entity Name": total_mentions }
 entity_popularity = Counter()
