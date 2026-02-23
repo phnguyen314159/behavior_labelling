@@ -1,12 +1,31 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+load_dotenv()
+
+# 1. Bypass the Microsoft STL version check (STL1002) and the unsupported version check
+# We pass -Xcompiler to tell nvcc to send the /D macro directly to the C++ compiler
+os.environ["NVCC_APPEND_FLAGS"] = "-allow-unsupported-compiler -Xcompiler /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
+
+# 2. Maintain your existing path injections
+msvc_bin = os.environ.get("MSVC_PATH")
+if msvc_bin:
+    msvc_bin = os.path.normpath(msvc_bin) 
+    os.environ["PATH"] = msvc_bin + os.path.pathsep + os.environ.get("PATH", "")
+
+if "CUDA_PATH" in os.environ:
+    os.environ["PATH"] = os.path.join(os.environ["CUDA_PATH"], "bin") + os.path.pathsep + os.environ["PATH"]
+
 from pathlib import Path
 from collections import Counter, defaultdict
 from typing import Iterator, Tuple, Literal
 from spacy.tokens import Doc, Span, Token
 import difflib
 import spacy
-from dotenv import load_dotenv
 
-load_dotenv()
+
 spacy.prefer_gpu()
 from fastcoref import spacy_component
 nlp = spacy.load("en_core_web_trf")
@@ -45,7 +64,7 @@ def iter_books(mode: Mode, base_dir: str | Path = "data/book", pattern: str = "*
         book_id = fp.name.split(".")[0]
         yield book_id, text
 
-def sliding_window(sent_nlp, text, window_size=20, step=17):
+def sliding_window(sent_nlp, text, window_size=7, step=5):
     
     sSpans = sentenizer(text, sent_nlp)
 
@@ -147,7 +166,7 @@ def book_process(text):
     doc_container = []
 
     #Rename 'offset' to 'context' because it contains the whole dict
-    for doc, context in nlp.pipe(sliding_window(sent_nlp, text, window_size=20, step=17), as_tuples=True): #add key to here too in front of in - completed
+    for doc, context in nlp.pipe(sliding_window(sent_nlp, text), as_tuples=True): #add key to here too in front of in - completed
 
         # Save BOTH doc and context as a tuple.
         # This prepares the data for the Registry step without needing a re-run, since doc get overwrite with each pipe run
@@ -160,7 +179,9 @@ def book_process(text):
 
         #we start working on the doc imediately to take avantage of its currently being load on living memory so we can take adv of doc_id
         for ent in doc.ents:
-            if ent.label_ == "PERSON":
+            cur_sent = get_local_sent_idx(ent.start_char, context["local_sent_spans"])
+            sent_valid = (cur_sent is not None) and (0 < cur_sent < 7)
+            if ent.label_ == "PERSON" and sent_valid:
                 global_ent.append({
                     "type": "PERSON",
                     "text": ent.text,
@@ -197,7 +218,8 @@ def book_process(text):
                     # we only record link if primary is out of buffer zone to avoid checking primary in 2 different doc but actually same word, we can just link that using overlapping cluster
                     #fix, streamline child_cluster linking directly into global_ent for easier access
                 cur_sent = get_local_sent_idx(primary[0], context["local_sent_spans"])
-                if 1 < cur_sent < 19:
+                sent_valid = (cur_sent is not None) and (0 < cur_sent < 7)
+                if sent_valid:
                     buffer_ent = check_depend(doc, primary[0], end)
                 else:
                     buffer_ent = None
@@ -205,7 +227,7 @@ def book_process(text):
                 #all we care is: for doc of id x, what clusters it has, and what is the primary of that cluster (tuple position)
                 if buffer_ent != None:
                     for ent in global_ent:
-                        if ent["doc_id"] == doc.id and ent["doc_token_pos"] == (buffer_ent.start, buffer_ent.end):
+                        if ent["doc_id"] == doc_id and ent["doc_token_pos"] == (buffer_ent.start, buffer_ent.end):
                         # Inject the new data element into 
                             ent["child_cluster"] = cluster_id
    
@@ -222,7 +244,7 @@ def book_process(text):
             pass
     return doc_container
 
-
+'''
 #TODO: CHECK CODE, need to fix this into method fittable to run with current pipeline
 #This code requirements:  
 # 1.fuzzy the global_ent to get a list of unique person we can use (5-7 is enough), but they must be unique
@@ -325,3 +347,4 @@ for doc_id, (doc, context) in enumerate(doc_container):
             if final_name not in entity_mentions_library:
                 entity_mentions_library[final_name] = set()
             entity_mentions_library[final_name].update(cluster_mentions)
+'''
