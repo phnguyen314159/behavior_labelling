@@ -88,6 +88,8 @@ def sliding_window(sent_nlp, text, window_size=7, step=5):
             "local_sent_spans": local_spans,
             "is_last": is_last    #add bool to check if last chunk
         }
+        
+        yield (chunk_text, context)
 
 def get_local_sent_idx(pos: int, local_sent_spans: list[tuple]):
     last_idx = len(local_sent_spans) - 1
@@ -296,93 +298,120 @@ registry = {
         ]
     }
 }
-
-# 1. To track counts: { "Entity Name": total_mentions }
-entity_popularity = Counter()
-# 2. To track clusters: { "Entity Name": {set of unique mention texts} }
-entity_mentions_library = {}
-
-def get_canonical_name(new_name, existing_names, cutoff=0.8):
-    """
-    Check if 'new_name' is similar enough to an existing name.
-    Returns the existing name if found, otherwise None.
-    """
-    # specific override for exact substring matches (e.g. "Harry" -> "Harry Potter")
-    for name in existing_names:
-        if new_name in name or name in new_name:
-            # Return the longer/more complete version as the canonical name
-            return name if len(name) > len(new_name) else new_name
-
-    # Fuzzy match for typos
-    matches = difflib.get_close_matches(new_name, existing_names, n=1, cutoff=cutoff)
-    if matches:
-        return matches[0]
-    return None
-
-# FIX: Unpack the tuple (doc, context) here!
-for doc_id, (doc, context) in enumerate(doc_container):
-
-    # FastCoref results are in doc._.coref_clusters
-    if not doc._.coref_clusters:
-        continue
-
-    for cluster in doc._.coref_clusters:
-        # Safety Check: Ensure the cluster list itself isn't None
-        if cluster is None:
-            continue
-
-        # Find the "Main Name" (the NER entity) inside this cluster
-        main_name = None
-        cluster_mentions = []
-
-        # we iterate item by item to prevent crash on None
-        for item in cluster:
-            # Safety Check: STOP THE CRASH
-            if item is None:
-                continue
-
-            # Now it is safe to unpack
-            start, end = item
-
-            span = doc.char_span(start, end)
-            if not span: continue
-
-            cluster_mentions.append(span.text)
-
-            # Check if this specific mention is also an NER Entity
-            # Optimization: Only check if we haven't found a main name yet
-            if not main_name:
-                for ent in doc.ents:
-                    if ent.start_char == span.start_char and ent.label_ == "PERSON":
-                        main_name = ent.text
-                        break
-
-        # If we found a Person's name in the cluster, update our counts
-        if main_name:
-            # TODO: regex! we want dups and dups with close similarity
-            # Regex finds exact patterns (e.g., "all emails"), while Fuzzy Matching finds similar text (e.g., "Jonh" ≈ "John").
-
-            # Regex is avoided because names vary by spelling and completeness (e.g., typos, partials), not by a strict structural pattern.
-            # https://medium.com/@m.nath/fuzzy-matching-algorithms-81914b1bc498 fuzzy matching algorithms
-            # Logic: Check if this main_name is actually a variation of someone we already have
-
-            existing_names = list(entity_popularity.keys())
-
-            # Helper function determines if 'Harry' == 'Harry Potter'
-            canonical = get_canonical_name(main_name, existing_names)
-
-            if canonical:
-                # Merge this count into the existing one
-                final_name = canonical
-            else:
-                # This is a new unique person
-                final_name = main_name
-
-            # Update counts
-            entity_popularity[final_name] += len(cluster)
-
-            # Update library
-            if final_name not in entity_mentions_library:
-                entity_mentions_library[final_name] = set()
-            entity_mentions_library[final_name].update(cluster_mentions)
 '''
+
+def fuzzy_match(s1, s2, threshold=0.8):
+    """Helper for fuzzy string matching."""
+    return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio() >= threshold
+
+def process_registry(global_ent, cluster_container):
+    # 1. fuzzy the global_ent to get a list of unique person we can use (5-7 is enough)
+    name_counts = Counter([ent["text"].strip() for ent in global_ent])
+    unique_persons = []
+    
+    for name, _ in name_counts.most_common():
+        if len(unique_persons) >= 7:
+            break
+        # 1.i. run a simple check to ensure they are unique
+        if not any(fuzzy_match(name, up) for up in unique_persons):
+            unique_persons.append(name)
+
+    # 2. for each of the unique person we get:
+    # Build buckets holding sets of indices: { "Adder": {"ent": set(), "cluster": set()} }
+    buckets = {up: {"ent": set(), "cluster": set()} for up in unique_persons}
+    
+    for i, ent in enumerate(global_ent):
+        ent_text = ent["text"].strip()
+        
+        # 2.i. use fuzzy to check global_ent against each unique person
+        for up in unique_persons:
+            if fuzzy_match(ent_text, up):
+                # add index to that unique name bucket under list "ent"
+                buckets[up]["ent"].add(i)
+                
+                # 2.ii. check if we have "child_cluster" in ent
+                if "child_cluster" in ent:
+                    c_id = ent["child_cluster"]
+                    d_id = ent["doc_id"]
+                    
+                    # use [cluster_id and ent's doc_id] to get the index from cluster_container
+                    for j, cluster in enumerate(cluster_container):
+                        if cluster["cluster_id"] == c_id and cluster["doc_id"] == d_id:
+                            # add that index to this unique name bucket in list "cluster"
+                            buckets[up]["cluster"].add(j)
+                break # Move to next ent once a bucket is found
+
+    # 3. once we get registry done, we will proceed to work with dups
+    merged_registry = []
+    
+    for up, data in buckets.items():
+        # 3.i. for each unique person bucket, make 2 sets: ent_index and cluster_index
+        ent_set = data["ent"]
+        cluster_set = data["cluster"]
+        
+        has_merged = False
+        # 3.ii. for each of the 2 set:
+        for mb in merged_registry:
+            # 3.ii.I. compare the set between 2 unique person using intersection of sets
+            ent_intersect = len(ent_set.intersection(mb["ent"])) > 0
+            
+            # 3.ii.III. meanwhile, if cluster set intersect pass a certain percentage (40%)
+            cluster_intersect = False
+            if len(cluster_set) > 0 and len(mb["cluster"]) > 0:
+                overlap = len(cluster_set.intersection(mb["cluster"]))
+                min_len = min(len(cluster_set), len(mb["cluster"]))
+                if (overlap / min_len) >= 0.4:
+                    cluster_intersect = True
+                    
+            # 3.ii.II. if intersect in ent_index at all (or cluster >= 40%), merge those 2
+            if ent_intersect or cluster_intersect:
+                mb["ent"].update(ent_set)
+                mb["cluster"].update(cluster_set)
+                
+                # Keep the longer, more descriptive name for the registry key
+                if len(up) > len(mb["name"]):
+                    mb["name"] = up
+                    
+                has_merged = True
+                break
+                
+        if not has_merged:
+            merged_registry.append({
+                "name": up,
+                "ent": ent_set,
+                "cluster": cluster_set
+            })
+
+    # Build the final output dictionary
+    registry = {}
+    
+    for mb in merged_registry:
+        primary_name = mb["name"]
+        references = []
+        
+        # Populate PERSON mentions
+        for e_idx in mb["ent"]:
+            ent = global_ent[e_idx]
+            references.append({
+                "global_char_pos": ent["global_start"],
+                "text": ent["text"],
+                "doc_ptr": f"<spacy_doc_{ent['doc_id']}>",
+                "local_line": ent.get("sentence_id", -1),
+                "local_span": list(ent["doc_token_pos"])
+            })
+            
+        # skipping the detailed pronoun texts for now
+        # including the structure based ONLY on the existing cluster_container data
+        for c_idx in mb["cluster"]:
+            clust = cluster_container[c_idx]
+            references.append({
+                "global_char_pos": -1, # Original code doesn't save global start for clusters
+                "text": "COREF_PRIMARY", 
+                "doc_ptr": f"<spacy_doc_{clust['doc_id']}>",
+                "local_line": -1, 
+                "local_span": list(clust["primary"])
+            })
+            
+        registry[primary_name] = {"references": references}
+        
+    return registry

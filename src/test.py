@@ -1,5 +1,6 @@
 import pytest
-from processData.textPipeline import iter_books, book_process, global_ent
+import json
+from processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
 
 def test_pipeline_with_real_data():
     """
@@ -7,6 +8,7 @@ def test_pipeline_with_real_data():
     """
     # 1. Clear global containers to start fresh for the test
     global_ent.clear()
+    cluster_container.clear() 
     
     # 2. Get the first book from the test folder
     # iter_books yields (book_id, text)
@@ -41,6 +43,33 @@ def test_pipeline_with_real_data():
     assert isinstance(sample_ent["doc_token_pos"], tuple)
     
     print(f"Test Passed: Extracted {len(global_ent)} entities from {book_id}")
+
+    # 6. Test Registry Builder
+    registry = process_registry(global_ent, cluster_container)
+    
+    # Verify the registry output schema
+    assert isinstance(registry, dict), "Registry must be a dictionary"
+    
+    if len(global_ent) > 0:
+        assert len(registry) > 0, "Registry failed to build unique person buckets"
+        
+        # Check schema of the first unique person bucket
+        first_person = list(registry.keys())[0]
+        assert "references" in registry[first_person], "Registry entry missing 'references' list"
+        
+        # Check schema of a reference item
+        if len(registry[first_person]["references"]) > 0:
+            sample_ref = registry[first_person]["references"][0]
+            # We removed the "type" assertion here!
+            assert "text" in sample_ref, "Reference missing 'text' key"
+            assert "global_char_pos" in sample_ref, "Reference missing 'global_char_pos' key"
+            
+            
+        print(f"Test Passed: Built registry with {len(registry)} unique person(s).")
+
+        # --- Print out the first registry entry to the terminal ---
+        print(f"\n--- Sample Registry Structure for '{first_person}' ---")
+        print(json.dumps({first_person: registry[first_person]}, indent=4))
 
 if __name__ == "__main__":
     # Allows manual execution: python src/test.py
