@@ -3,7 +3,6 @@ from collections import deque
 from src.config import WINDOW_SIZE, STEP, LAST_INDEX
 
 def clean_persp(target_name, current_doc_id, doc_container, registry):
-    cleaned_sentences = []
     doc, context = doc_container[current_doc_id]
     is_last = context.get("is_last", False)
     is_first = (current_doc_id == 0)
@@ -22,7 +21,7 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
         if is_first:
             sent_valid = (0 <= sent_idx < LAST_INDEX)
         elif is_last:
-            sent_valid = (sent_idx > 0) # or sent_idx == -1 if using relative indexing
+            sent_valid = (sent_idx > 0)
         else:
             sent_valid = (0 < sent_idx < LAST_INDEX)
 
@@ -70,51 +69,7 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
                 sent_text = sent_text[:s_local] + edit["label"] + sent_text[s_local:]
 
         yield sent_idx, sent_text
-
-"""         cleaned_sentences.append(sent_text)
-    return cleaned_sentences """
-
-""" # The Master Store for injected sentences
-fixed_sentences = {} 
-
-def populate_fixed_registry(target_name, doc_container, registry):
-    for doc_id in range(len(doc_container)):
-        # Run your clean_persp logic (the one we just refined)
-        sentences = clean_persp(target_name, doc_id, doc_container, registry)
-        
-        for entry in sentences:
-            # Key: (doc_id, local_sent_idx) -> Value: The Injected Text
-            fixed_sentences[(entry["doc_id"], entry["sent_local_idx"])] = entry["processed_text"]
-
-def bart_prep_generator(fixed_sentences, doc_container):
-    for (doc_id, sent_idx), target_text in fixed_sentences.items():
-        doc, context = doc_container[doc_id]
-        all_sents = list(doc.sents)
-        
-        chunk_to_join = []
-        
-        # 1. Get 2 Sentences Before
-        for i in range(sent_idx - 2, sent_idx):
-            if i >= 0:
-                # Check if we have an injected version of this neighbor
-                # If not, use the raw text from the Doc
-                chunk_to_join.append(fixed_sentences.get((doc_id, i), all_sents[i].text))
-            else:
-                # Handle start of book cases: just skip missing neighbors
-                pass
-        
-        # 2. Add the Target Sentence (The Injected one we are currently at)
-        chunk_to_join.append(target_text)
-        
-        # 3. Get 1 Sentence After
-        after_idx = sent_idx + 1
-        if after_idx < len(all_sents):
-            chunk_to_join.append(fixed_sentences.get((doc_id, after_idx), all_sents[after_idx].text))
-            
-        # 4. Final Join
-        final_chunk = " ".join(chunk_to_join).strip()
-        
-        yield final_chunk """
+    return None
 
             
 def bart_prep_generator(doc_container, registry, target_name):
@@ -134,7 +89,7 @@ def bart_prep_generator(doc_container, registry, target_name):
                 # Returns (f_idx, f_text) from your generator
                 return next(sentence_gen)
             except StopIteration:
-                return float('inf'), None
+                return WINDOW_SIZE, None
 
         f_idx, f_text = get_next_f()
 
@@ -165,15 +120,16 @@ def bart_prep_generator(doc_container, registry, target_name):
                 
                 # 4. THE "LAST CHECK": Push one more to complete the context
                 # We peek at s_idx + 1 to provide the 'Post' context
-                next_idx = s_idx + 1
+                if f_idx < WINDOW_SIZE:
+                    next_idx = s_idx + 1
                     # If the very next line is also a milestone, push its fixed version
-                if next_idx == f_idx:
-                    sentence_queue.append(f_text)
-                        # Re-engage again because we just consumed this milestone
-                    f_idx, f_text = get_next_f()
-                else:
-                        # Otherwise, push the raw s_idx+1 neighbor
-                    sentence_queue.append(all_raw_sents[next_idx].text)
+                    if next_idx == f_idx:
+                        sentence_queue.append(f_text)
+                            # Re-engage again because we just consumed this milestone
+                        f_idx, f_text = get_next_f()
+                    else:
+                            # Otherwise, push the raw s_idx+1 neighbor
+                        sentence_queue.append(all_raw_sents[next_idx].text)
 
                 final_chunk = " ".join(list(sentence_queue)).strip()
                 yield f"{prompt_prefix}{final_chunk}"
