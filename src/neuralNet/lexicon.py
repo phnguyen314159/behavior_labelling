@@ -19,7 +19,7 @@ for category_name, seed_words in CATEGORIES.items():
     expanded_words = lexicon.create_category(category_name, seed_words, model="fiction")
     expanded_6d_lexicon[category_name] = expanded_words
 
-storage_path = Path('processData/6d_lexicon.json')
+storage_path = Path('data/6d_lexicon.json')
 with open(storage_path, 'w') as f:
     json.dump(expanded_6d_lexicon, f, indent=4)
 
