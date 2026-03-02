@@ -171,8 +171,7 @@ def book_process(text):
     doc_container = []
 
     #Rename 'offset' to 'context' because it contains the whole dict
-    for doc, context in nlp.pipe(sliding_window(sent_nlp, text), as_tuples=True): #add key to here too in front of in - completed
-
+    for doc, context in nlp.pipe(sliding_window(sent_nlp, text, WINDOW_SIZE, STEP), as_tuples=True): #add key to here too in front of in - completed
         # Save BOTH doc and context as a tuple.
         # This prepares the data for the Registry step without needing a re-run, since doc get overwrite with each pipe run
         doc_container.append((doc, context))
@@ -239,11 +238,30 @@ def book_process(text):
                         # Inject the new data element into 
                             ent["child_cluster"] = cluster_id
    
+                # --- NEW CODE TO EXTRACT PRONOUN/COREF TEXT ---
+                mentions = []
+                for item in cluster:
+                    if item is None or item == primary:
+                        continue
+                        
+                    start, end = item
+                    span = doc.char_span(start, end)
+                    if span:
+                        local_line = get_local_sent_idx(start, context["local_sent_spans"])
+                        mentions.append({
+                            "global_char_pos": start + chunk_start_offset,
+                            "text": span.text,
+                            "local_line": local_line if local_line is not None else -1,
+                            "local_span": [start, end]
+                        })
+
                 cluster_container.append({
                     "doc_id": doc_id,
                     "cluster_id": cluster_id,
-                    "primary": primary
+                    "primary": primary,
+                    "mentions": mentions # Add the extracted text to the container
                 })
+                
 
         # Clear RAM
         try:
@@ -396,22 +414,25 @@ def process_registry(global_ent, cluster_container):
             references.append({
                 "global_char_pos": ent["global_start"],
                 "text": ent["text"],
-                "doc_ptr": f"<spacy_doc_{ent['doc_id']}>",
+                "doc_ptr": ent['doc_id'],
                 "local_line": ent.get("sentence_id", -1),
-                "local_span": list(ent["doc_token_pos"])
+                "local_span": list(ent["doc_token_pos"]),
+                "type": "PERSON"  # <-- Added back!
             })
             
-        # skipping the detailed pronoun texts for now
-        # including the structure based ONLY on the existing cluster_container data
+        # Populate COREF mentions
         for c_idx in mb["cluster"]:
             clust = cluster_container[c_idx]
-            references.append({
-                "global_char_pos": -1, # Original code doesn't save global start for clusters
-                "text": "COREF_PRIMARY", 
-                "doc_ptr": f"<spacy_doc_{clust['doc_id']}>",
-                "local_line": -1, 
-                "local_span": list(clust["primary"])
-            })
+            # Unpack the pronouns we saved in book_process
+            for mention in clust.get("mentions", []):
+                references.append({
+                    "global_char_pos": mention["global_char_pos"],
+                    "text": mention["text"],
+                    "doc_ptr": ent['doc_id'],
+                    "local_line": mention["local_line"],
+                    "local_span": mention["local_span"],
+                    "type": "COREF"  # <-- Added back!
+                })
             
         registry[primary_name] = {"references": references}
         

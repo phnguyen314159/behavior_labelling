@@ -1,3 +1,9 @@
+import sys
+import os
+# This tells Python to include your main PorjectBart folder in its search path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+
 import pytest
 import json
 from processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
