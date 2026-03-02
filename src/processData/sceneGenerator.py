@@ -1,6 +1,7 @@
 from spacy import tokens
 from collections import deque
-from src.config import WINDOW_SIZE, STEP, LAST_INDEX
+from src.config import WINDOW_SIZE, STEP, LAST_INDEX, BATCH_SIZE
+from processData.textPipeline import doc_container, registry
 
 def clean_persp(target_name, current_doc_id, doc_container, registry):
     doc, context = doc_container[current_doc_id]
@@ -135,6 +136,31 @@ def scene_prep_generator(doc_container, registry, target_name):
                         sentence_queue.append(all_raw_sents[next_idx].text)
 
                 final_chunk = " ".join(list(sentence_queue)).strip()
-                yield f"{prompt_prefix}{final_chunk}", s_idx #critical: gen will now yield both the scene string AND the id of the curr line, for temporal
+                yield f"{prompt_prefix}{final_chunk}", (s_idx + doc_id*WINDOW_SIZE) #critical: gen will now yield both the scene string AND the id of the curr line, for temporal
 
-#TODO: THESE ARE WIP
+def scene_batch_gen(doc_container, registry, M=BATCH_SIZE):
+    # Initialize character-specific queues
+    queues = {name: [] for name in registry.keys()}
+    active_generators = {
+        name: scene_prep_generator(doc_container, registry, name) 
+        for name in registry.keys()
+    }
+
+    while active_generators:
+        for name in list(active_generators.keys()):
+            try:
+                # 1. Busy Work: Pull the next scene for this character lens
+                text, sent_idx = next(active_generators[name])
+                queues[name].append((sent_idx, text))
+                
+                # 2. Threshold Check: If queue is size M, yield the batch
+                if len(queues[name]) == M:
+                    yield name, queues[name] # Yield the batch then clean queue
+                    queues[name] = []
+                    
+            except StopIteration:
+                # 3. Final Flush: Child generator died, yield remaining scenes
+                if queues[name]:
+                    yield queues[name]
+                del active_generators[name]
+                del queues[name]

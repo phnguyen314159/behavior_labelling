@@ -414,23 +414,24 @@ def process_registry(global_ent, cluster_container):
             references.append({
                 "global_char_pos": ent["global_start"],
                 "text": ent["text"],
-                "doc_ptr": f"<spacy_doc_{ent['doc_id']}>",
+                "doc_ptr": ent['doc_id'],
                 "local_line": ent.get("sentence_id", -1),
-                "local_span": list(ent["doc_token_pos"])
+                "local_span": list(ent["doc_token_pos"]),
+                "type": "PERSON"  # <-- Added back!
             })
             
-        # skipping the detailed pronoun texts for now
-        # including the structure based ONLY on the existing cluster_container data
-        # Unpack the detailed pronoun texts we just saved!
+        # Populate COREF mentions
         for c_idx in mb["cluster"]:
             clust = cluster_container[c_idx]
+            # Unpack the pronouns we saved in book_process
             for mention in clust.get("mentions", []):
                 references.append({
                     "global_char_pos": mention["global_char_pos"],
-                    "text": mention["text"], 
+                    "text": mention["text"],
                     "doc_ptr": ent['doc_id'],
-                    "local_line": mention["local_line"], 
-                    "local_span": mention["local_span"]
+                    "local_line": mention["local_line"],
+                    "local_span": mention["local_span"],
+                    "type": "COREF"  # <-- Added back!
                 })
             
         registry[primary_name] = {"references": references}
