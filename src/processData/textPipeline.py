@@ -69,7 +69,7 @@ def sliding_window(sent_nlp, text, WINDOW_SIZE, STEP):
     sSpans = sentenizer(text, sent_nlp)
 
     for i in range(0, len(sSpans), STEP):
-        j = min(i + WINDOW_SIZE, len(sSpans))
+        j = min(i + WINDOW_SIZE, len(sSpans)-1)
         if i >= j:
             break
         chunk_start = sSpans[i][0] #start of 1st sent, treat like global offset
@@ -80,7 +80,7 @@ def sliding_window(sent_nlp, text, WINDOW_SIZE, STEP):
         local_spans = [(s - chunk_start, e - chunk_start) for (s, e) in sSpans[i:j]] #list that have the span of each sentence in the chunk, but referencing the chunk itself
 
         # Metadata
-        is_last = (j == len(sSpans))
+        is_last = (j == len(sSpans)-1)
 
         context = {
             "offset": chunk_start, 
@@ -183,7 +183,8 @@ def book_process(text):
         chunk_start_offset = context["offset"]
 
         #we start working on the doc imediately to take avantage of its currently being load on living memory so we can take adv of doc_id
-        is_last = context.get("is_last", False)
+        #for is_last, we dont really concern if its the actual last chunk, what we concern is if the last chunk has less than WINDOW_SIZE
+        is_last = context.get("is_last", False)            
         is_first = (doc_id == 0)
         for ent in doc.ents:
             cur_sent = get_local_sent_idx(ent.start_char, context["local_sent_spans"])

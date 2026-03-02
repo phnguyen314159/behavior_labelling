@@ -72,7 +72,7 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
     return None
 
             
-def bart_prep_generator(doc_container, registry, target_name):
+def scene_prep_generator(doc_container, registry, target_name):
     sentence_queue = deque(maxlen=4)
     prompt_prefix = f"Task: Analyze {target_name}. Context: "
 
@@ -135,6 +135,6 @@ def bart_prep_generator(doc_container, registry, target_name):
                         sentence_queue.append(all_raw_sents[next_idx].text)
 
                 final_chunk = " ".join(list(sentence_queue)).strip()
-                yield f"{prompt_prefix}{final_chunk}"
+                yield f"{prompt_prefix}{final_chunk}", s_idx #critical: gen will now yield both the scene string AND the id of the curr line, for temporal
 
 #TODO: THESE ARE WIP
