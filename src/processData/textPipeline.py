@@ -70,8 +70,7 @@ def sliding_window(sent_nlp, text, WINDOW_SIZE, STEP):
 
     for i in range(0, len(sSpans), STEP):
         j = min(i + WINDOW_SIZE, len(sSpans)-1)
-        if i >= j:
-            break
+        
         chunk_start = sSpans[i][0] #start of 1st sent, treat like global offset
         chunk_end   = sSpans[j-1][1] #end of 20th sent
         chunk_text  = text[chunk_start:chunk_end] #chunk string
