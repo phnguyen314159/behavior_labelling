@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-load_dotenv()
-
 # 1. Bypass the Microsoft STL version check (STL1002) and the unsupported version check
 # We pass -Xcompiler to tell nvcc to send the /D macro directly to the C++ compiler
 os.environ["NVCC_APPEND_FLAGS"] = "-allow-unsupported-compiler -Xcompiler /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
@@ -28,8 +26,11 @@ import spacy
 
 spacy.prefer_gpu()
 from fastcoref import spacy_component
+
+
 nlp = spacy.load("en_core_web_trf")
 nlp.add_pipe("fastcoref", config={'model_architecture': 'LingMessCoref', 'device': 'cuda'})
+
 
 from src.config import WINDOW_SIZE, STEP, LAST_INDEX
 

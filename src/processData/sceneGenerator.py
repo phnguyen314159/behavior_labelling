@@ -136,8 +136,7 @@ def scene_prep_generator(doc_container, registry, target_name):
                         sentence_queue.append(all_raw_sents[next_idx].text)
 
                 final_chunk = " ".join(list(sentence_queue)).strip()
-                yield f"{prompt_prefix}{final_chunk}", (s_idx + doc_id*WINDOW_SIZE) #critical: gen will now yield both the scene string AND the id of the curr line, for temporal
-
+                yield f"{prompt_prefix}{final_chunk}", (doc_id, s_idx) #change to simplify helper funct to get token span
 def scene_batch_gen(doc_container, registry, M=BATCH_SIZE):
     # Initialize character-specific queues
     queues = {name: [] for name in registry.keys()}
