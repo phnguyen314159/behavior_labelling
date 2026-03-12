@@ -2,9 +2,9 @@ import random
 import sys
 import os
 import pytest
-from processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
-from NNrun import run_behavioral_pipeline
-from neuralNet.zeroshot import calculate_w_vector
+from src.processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
+from src.NNrun import run_behavioral_pipeline
+from src.neuralNet.zeroshot import calculate_w_vector
 
 def test_pipeline_with_real_data():
     """
@@ -89,7 +89,7 @@ def test_zeroshot_behavioral_pipeline():
     book_id, text = books[0]
     
     # Process a limited amount of text for a faster test
-    doc_container = book_process(text[:10000]) 
+    doc_container = book_process(text[:20000]) 
     registry = process_registry(global_ent, cluster_container)
 
     # 2. Run Behavioral Pipeline
@@ -108,6 +108,20 @@ def test_zeroshot_behavioral_pipeline():
             assert "label_vector" in sample, "Missing label_vector in output"
             assert "weighted_vector" in sample, "Missing weighted_vector in output"
             assert len(sample["label_vector"]) == 6, "Vector length must match 6D labels"
+    
+    candidate = list(all_results.keys())[:2]
+
+    print(f"{'Character':<12} | {'Label Vector (First 3)':<30} | {'Weighted Vector (First 3)'}")
+    print("-" * 85)
+
+    for char in candidate:  # Slicing to get only the first 3 dict entries
+        data = all_results[char]
+        for entry in data[:3]:
+            l_vec_str = str([round(float(x), 4) for x in entry['label_vector']])
+            w_vec_str = str([round(float(x), 4) for x in entry['weighted_vector']])
+        
+            print(f"{char:<12} | {l_vec_str:<55} | {w_vec_str}")
+        print("-" * 85)
 
 def test_vector_math_logic():
     """Verify the competitive softmax logic for Group A and B."""
@@ -120,8 +134,18 @@ def test_vector_math_logic():
     assert len(weighted) == 6
 
 if __name__ == "__main__":
-    # Run the standard pipeline test first
-    test_pipeline_with_real_data()
-    # Run the new zeroshot integration tests
-    test_zeroshot_behavioral_pipeline()
-    test_vector_math_logic()
+    #run from code as root
+    #python -m src.test
+    #if you are testing bart, use -b, if for pipe (heavy) use -p
+    import argparse
+    parser = argparse.ArgumentParser() # No description needed
+    parser.add_argument("-p", "--pipe", action="store_true")
+    parser.add_argument("-b", "--bart", action="store_true")
+    args = parser.parse_args()
+
+    if args.bart:
+        test_zeroshot_behavioral_pipeline()
+        test_vector_math_logic()
+    if args.pipe:
+        test_pipeline_with_real_data()
+    

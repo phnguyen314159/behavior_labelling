@@ -6,17 +6,15 @@ from collections import defaultdict
 import torch
 from transformers import pipeline
 
-from processData.sceneGenerator import scene_batch_gen
+from src.processData.sceneGenerator import scene_batch_gen
 #from src.fileIO import load_doc_container, load_registry
-from config import WINDOW_SIZE
+from src.config import WINDOW_SIZE, BATCH_SIZE, LABELS
 
 # --- PATH SETUP ---
 # Locating the baked lexicon in the root 'data' folder
 script_dir = Path(__file__).resolve().parent
 root_dir = script_dir.parent.parent
 lexicon_path = root_dir / "data" / "6d_lexicon.json"
-
-from config import BATCH_SIZE, LABELS
 
 with open(lexicon_path, "r", encoding="utf-8") as f:
     behavior_lexicon = json.load(f)
@@ -55,8 +53,7 @@ def calculate_w_vector(l_vector):
     # 4. Re-assemble into final 6D w_vector
     return np.concatenate([a_scaled, b_scaled]).tolist()
 
-#TODO: ADD A PUBLIC CONTAINER AS PREFERENCE SO INSTEAD OF RETURN A BATCH OF RESULT, WE UPDATE THAT CONTAINER
-def process_teacher_batch(character_name, scene_batch, processed_data):
+def process_teacher_batch(scene_batch, processed_data):
     """
     Processes a character-specific batch through BART to generate 
     the behavioral ground truth (L).

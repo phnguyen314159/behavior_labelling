@@ -1,6 +1,6 @@
 from spacy import tokens
 from collections import deque
-from config import WINDOW_SIZE, STEP, LAST_INDEX, BATCH_SIZE
+from src.config import WINDOW_SIZE, STEP, LAST_INDEX, BATCH_SIZE
 
 
 def clean_persp(target_name, current_doc_id, doc_container, registry):
@@ -161,6 +161,6 @@ def scene_batch_gen(doc_container, registry, M=BATCH_SIZE):
             except StopIteration:
                 # 3. Final Flush: Child generator died, yield remaining scenes
                 if queues[name]:
-                    yield queues[name]
+                    yield name, queues[name]
                 del active_generators[name]
                 del queues[name]

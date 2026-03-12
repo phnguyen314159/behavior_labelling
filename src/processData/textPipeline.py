@@ -32,7 +32,7 @@ nlp = spacy.load("en_core_web_trf")
 nlp.add_pipe("fastcoref", config={'model_architecture': 'LingMessCoref', 'device': 'cuda'})
 
 
-from config import WINDOW_SIZE, STEP, LAST_INDEX
+from src.config import WINDOW_SIZE, STEP, LAST_INDEX
 
 def make_sentencizer():
     sent_nlp = spacy.blank("en")
