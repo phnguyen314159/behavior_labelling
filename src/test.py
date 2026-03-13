@@ -1,3 +1,4 @@
+
 import random
 import sys
 import os
@@ -126,7 +127,7 @@ def test_zeroshot_behavioral_pipeline():
         print("-" * 120)
 
     for char in candidate:  # Slicing to get only the first 3 dict entries
-        data = all_results[char]
+        data = zshot_results[char]
         for entry in data[:3]:
             l_vec_str = str([round(float(x), 4) for x in entry['label_vector']])
             w_vec_str = str([round(float(x), 4) for x in entry['weighted_vector']])
@@ -184,7 +185,7 @@ def test_encoding():
 if __name__ == "__main__":
     #run from code as root
     #python -m src.test
-    #if you are testing bart, use -b, if for pipe (heavy) use -p
+    #if you are testing bart, use -b, if for pipe (heavy) use -p, foe encode (sbert) use -e
     import argparse
     parser = argparse.ArgumentParser() # No description needed
     parser.add_argument("-p", "--pipe", action="store_true")

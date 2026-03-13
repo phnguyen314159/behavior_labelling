@@ -1,6 +1,6 @@
 import torch
 from sentence_transformers import SentenceTransformer
-from config import BATCH_SIZE
+from src.config import BATCH_SIZE
 
 #TODO: SAROSH CHECK IF RUNNABLE AND MODIFY
 # 1. Initialize SBERT
