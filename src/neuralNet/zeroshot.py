@@ -3,8 +3,9 @@ import math
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
-import torch
 from transformers import pipeline
+from transformers.pipelines.pt_utils import KeyDataset
+from datasets import Dataset
 
 from src.processData.sceneGenerator import scene_batch_gen
 #from src.fileIO import load_doc_container, load_registry
@@ -62,13 +63,12 @@ def process_teacher_batch(scene_batch, processed_data):
     texts = [item[0] for item in scene_batch]
     indices = [item[1] for item in scene_batch]
 
-    # Configuration for the bias
     BASE_BOOST = 0.05  # The 'nudge' per word match
     
-    # Multi-label inference: allows the model to score all 6 dimensions independently
-    results = classifier(texts, candidate_labels=LABELS, multi_label=True)
-    
-    # Structure the output for the Embedding Store
+    #Fix the Sequential Processing Warning
+    dataset = Dataset.from_dict({"text": texts})
+    results = classifier(KeyDataset(dataset, "text"), candidate_labels=LABELS, multi_label=True)
+
     for i, res in enumerate(results):
         score_map = dict(zip(res['labels'], res['scores']))
         current_text = texts[i].lower()

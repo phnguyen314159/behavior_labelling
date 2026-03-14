@@ -22,7 +22,7 @@ def process_observation_batch(scene_batch, processed_data):
     embeddings = encoder.encode(
         texts, 
         batch_size=BATCH_SIZE, 
-        convert_to_tensor=False, 
+        convert_to_tensor=True, #fix to avoid heavy convert to cpu ram
         show_progress_bar=False
     )
 

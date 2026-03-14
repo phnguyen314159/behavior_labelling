@@ -1,4 +1,5 @@
 import torch
+import math
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -10,52 +11,42 @@ def prepare_and_save_chunks(all_res, bart_data_dict, sbert_data_dict, filename="
     bart_data_dict: { 'Name': [{'label_vector': [...], ...}, ...], ... }
     sbert_data_dict: { 'Name': [ [768_dims], [768_dims], ... ], ... }
     """
-    all_encode = []
-    all_lbls = []
 
-    for char_name in sbert_data_dict.keys():
-        encode_list = sbert_data_dict[char_name]
-        lbl_list = [item['weighted_vector'] for item in bart_data_dict[char_name]] #just pick the item we want from bart_dict
+    total_chunks = 0
+    for char_name in sbert_data_dict:
+        n = len(sbert_data_dict[char_name])
+        if n >= chunk_size:
+            # math.ceil ensures we get the final partial chunk too
+            total_chunks += math.ceil(n / chunk_size)
+    all_encode = torch.empty((total_chunks, chunk_size, 768))
+    all_lbls = torch.empty((total_chunks, chunk_size, 6))
+
+    idx = 0
+    for char_name in sbert_data_dict:
+        encodes = sbert_data_dict[char_name]
+        lbls = [item['weighted_vector'] for item in bart_data_dict[char_name]]
+        n = len(encodes)
         
-        N = len(encode_list)
-        #right now we skip char if not enough data for the sequence, TODO: we can pad it if we want
-        if N < chunk_size:
+        if n < chunk_size:
             continue
-
-        start = 0
-        
-        while start < N:
-            end = start + chunk_size
             
-            # --- THE INTEGRATED SHIFT ---
-            if end > N:
-                # If we would overshoot, shift the window back to hit the exact end
-                end = N
-                start = N - chunk_size
-                
-                #final shifted chunk
-                all_encode.append(torch.tensor(encode_list[start:end]))
-                all_lbls.append(torch.tensor(lbl_list[start:end]))
-                break 
+        # Standard sliding window over range
+        for i in range(0, n, chunk_size):
+            # Check for the last chunk
+            if i + chunk_size > n:
+                # If we'd overshoot, take the last 'chunk_size' elements
+                start = n - chunk_size
+                end = n
+            else:
+                start = i
+                end = i + chunk_size
             
-            # --- THE STANDARD CHUNK ---
-            all_encode.append(torch.tensor(encode_list[start:end]))
-            all_lbls.append(torch.tensor(lbl_list[start:end]))
+            # Fill pre-allocated memory directly (No torch.stack needed!)
+            sbert_tensor[idx] = torch.tensor(encodes[start:end])
+            bart_tensor[idx] = torch.tensor(lbls[start:end])
+            idx += 1
 
-            if end == N:
-                break
-                
-            start += chunk_size
-
-    # Convert to high-performance stacked tensors
-    sbert_tensor = torch.stack(all_encode).float()
-    bart_tensor = torch.stack(all_lbls).float()
-
-    save_path = BASE_DIR / filename
-    torch.save({'encodings': sbert_tensor, 'labels': bart_tensor}, save_path)
-    
-    print(f"Created {sbert_tensor.shape[0]} chunks of 100 windows each.")
-    print(f"Saved to: {save_path}")
+    torch.save({'encodings': sbert_tensor, 'labels': bart_tensor}, BASE_DIR / filename)
 
 def load_distill_data(filename="distill_data.pt"):
     load_path = BASE_DIR / filename

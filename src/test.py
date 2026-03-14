@@ -161,8 +161,7 @@ def test_encoding():
             assert "obs_vector" in sample, "Missing obs_vector in output"
             
             # Check the dimensionality (SBERT is usually 768)
-            vector_len = len(sample["obs_vector"])
-            assert vector_len == 768, f"Expected 768d vector, got {vector_len}d"
+            assert sample["obs_vector"].shape == (768,), f"Expected 768d, got {sample['obs_vector'].shape}"
 
     # 4. Printing the results
     # Since 768 is too long to print, we show just the first 5 dimensions
@@ -176,8 +175,9 @@ def test_encoding():
         for entry in data[:3]:
             # Formatting the context and the vector slice
             ctx_str = str(entry['context'])
-            v_slice = [round(float(x), 4) for x in entry['obs_vector'][:5]]
-            v_str = f"{str(v_slice)[:-1]} ...]" # Add ellipsis to show it's truncated
+            v_slice = entry['obs_vector'][:5].detach().cpu().numpy()
+            v_str = np.array2string(v_slice, precision=4, separator=', ')
+            v_str = f"{v_str[:-1]} ...]" # Add ellipsis
             
             print(f"{char:<12} | {ctx_str:<20} | {v_str}")
         print("-" * 90)
