@@ -181,7 +181,34 @@ def test_encoding():
             
             print(f"{char:<12} | {ctx_str:<20} | {v_str}")
         print("-" * 90)
+        
+def generate_distill_dataset():
+    """
+    Run BOTH the encoding and zeroshot pipelines, then save the chunked data for the GRU.
+    """
+    print("\n--- Starting Data Extraction for GRU ---")
+    global_ent.clear()
+    cluster_container.clear()
+    
+    books = list(iter_books(mode="test"))
+    book_id, text = books[0]
+    
+    # Note: Using text[:20000] for a fast test. Remove slice for the full book.
+    doc_container = book_process(text[:20000]) 
+    registry = process_registry(global_ent, cluster_container)
 
+    print("Running SBERT and BART pipelines...")
+    all_results = data_pipeline_helper(doc_container, registry, [models.ENCODE, models.ZSHOT])
+    
+    bart_data_dict = all_results.get("ZSHOT", {})
+    sbert_data_dict = all_results.get("ENCODE", {})
+    
+    
+    from src.neuralNet.GRU1.helpers import prepare_and_save_chunks
+    
+    print("Pipeline complete. Distilling chunks...")
+    prepare_and_save_chunks(all_results, bart_data_dict, sbert_data_dict)
+    
 if __name__ == "__main__":
     #run from code as root
     #python -m src.test
@@ -191,6 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--pipe", action="store_true")
     parser.add_argument("-b", "--bart", action="store_true")
     parser.add_argument("-e", "--encode", action="store_true")
+    parser.add_argument("-d", "--distill", action="store_true")
     args = parser.parse_args()
 
     if args.bart:
@@ -199,4 +227,6 @@ if __name__ == "__main__":
         test_pipeline_with_real_data()
     if args.encode:
         test_encoding()
+    if args.distill:
+        generate_distill_dataset()
     
