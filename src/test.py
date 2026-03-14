@@ -2,6 +2,7 @@
 import random
 import sys
 import os
+import numpy as np
 import pytest
 from src.processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
 from src.NNrun import data_pipeline_helper, models
@@ -207,7 +208,7 @@ def generate_distill_dataset():
     from src.neuralNet.GRU1.helpers import prepare_and_save_chunks
     
     print("Pipeline complete. Distilling chunks...")
-    prepare_and_save_chunks(all_results, bart_data_dict, sbert_data_dict)
+    prepare_and_save_chunks(all_results)
     
 if __name__ == "__main__":
     #run from code as root

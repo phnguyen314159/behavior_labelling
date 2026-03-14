@@ -6,15 +6,15 @@ BASE_DIR = Path(__file__).resolve().parent
 
 #all_results.get("ZSHOT", {}) -> sbert
 #all_results.get("ENCODE", {}) -> bart
-def prepare_and_save_chunks(all_res, bart_data_dict, sbert_data_dict, filename="distill_data.pt", chunk_size=100):
+def prepare_and_save_chunks(all_res, filename="distill_data.pt", chunk_size=100):
     """
-    bart_data_dict: { 'Name': [{'label_vector': [...], ...}, ...], ... }
-    sbert_data_dict: { 'Name': [ [768_dims], [768_dims], ... ], ... }
+    bart: { 'Name': [{'label_vector': [...], ...}, ...], ... }
+    sbert: { 'Name': [ [768_dims], [768_dims], ... ], ... }
     """
 
     total_chunks = 0
-    for char_name in sbert_data_dict:
-        n = len(sbert_data_dict[char_name])
+    for char_name in all_res:
+        n = len(all_res[char_name])
         if n >= chunk_size:
             # math.ceil ensures we get the final partial chunk too
             total_chunks += math.ceil(n / chunk_size)
@@ -22,9 +22,10 @@ def prepare_and_save_chunks(all_res, bart_data_dict, sbert_data_dict, filename="
     all_lbls = torch.empty((total_chunks, chunk_size, 6))
 
     idx = 0
-    for char_name in sbert_data_dict:
-        encodes = sbert_data_dict[char_name]
-        lbls = [item['weighted_vector'] for item in bart_data_dict[char_name]]
+    char_names = list(all_res.get("ENCODE", {}).keys())
+    for char_name in char_names:
+        encodes = [item['obs_vector'] for item in all_res.get("ENCODE", {})[char_name]]
+        lbls = [item['weighted_vector'] for item in all_res.get("ZSHOT", {})[char_name]]
         n = len(encodes)
         
         if n < chunk_size:
@@ -40,13 +41,11 @@ def prepare_and_save_chunks(all_res, bart_data_dict, sbert_data_dict, filename="
             else:
                 start = i
                 end = i + chunk_size
-            
-            # Fill pre-allocated memory directly (No torch.stack needed!)
-            sbert_tensor[idx] = torch.tensor(encodes[start:end])
-            bart_tensor[idx] = torch.tensor(lbls[start:end])
+            all_encode[idx] = torch.stack(encodes[start:end]) #since this is alr a list of tensors
+            all_lbls[idx] = torch.tensor(lbls[start:end])
             idx += 1
 
-    torch.save({'encodings': sbert_tensor, 'labels': bart_tensor}, BASE_DIR / filename)
+    torch.save({'encodings': all_encode, 'labels': all_lbls}, BASE_DIR / filename)
 
 def load_distill_data(filename="distill_data.pt"):
     load_path = BASE_DIR / filename
