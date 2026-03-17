@@ -7,6 +7,10 @@ BASE_DIR = Path(__file__).resolve().parent
 
 #all_results.get("ZSHOT", {}) -> sbert
 #all_results.get("ENCODE", {}) -> bart
+
+#we currently use a naive decay, we know the relative sent_id of each encoding in our list (and they are all pivoted on a char)
+#so, we purely note down the distance between 2 neighboring encoding, if they close, low decay, if they far, high decay.
+#ex: sent1, sent2, sent 3, sent 56, sent 57, sent 80 -> big decay for sent 56 encoding and sent 80 encoding
 def prepare_and_save_chunks(all_res_list, chunk_size=100):
     """
     bart: { 'Name': [{'label_vector': [...], ...}, ...], ... }

@@ -20,7 +20,7 @@ def train_model(training: bool):
     # 2. Hyperparameters
     BATCH_SIZE = 8
     LEARNING_RATE = 1e-3
-    EPOCHS = 50
+    EPOCHS = 20
     BASE_DIR = Path(__file__).resolve().parent
 
     # 3. Load Data
@@ -101,13 +101,11 @@ def train_model(training: bool):
 
         # Print average loss for the epoch
         avg_loss = total_loss / sample
-        current_alpha = model.alpha.item()
-        if least_loss > avg_loss:
-            least_loss = avg_loss
-            save_path = BASE_DIR / "gru1_learned_labeler.pth"
-            torch.save(model.state_dict(), save_path)
+        current_alpha = model.alpha.item()            
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Average Loss: {avg_loss:.4f} | Alpha: {current_alpha:.4f}")
-
+        
+    save_path = "gru1_learned_labeler.pth"
+    torch.save(model.state_dict(), save_path)
     print("\nTraining complete! Model saved")
 
 if __name__ == "__main__":
