@@ -182,11 +182,11 @@ def generate_distill_dataset():
     """
     print("\n--- Starting Data Extraction for GRU ---")
     
-    books = list(iter_books(mode="test"))
-    book_id, text = books[0]
+    books = list(iter_books(mode="train"))
+    book_id, text = books[3]
     
     # Note: Using text[:20000] for a fast test. Remove slice for the full book.
-    doc_container, ents, clusters = book_process(text[:20000])
+    doc_container, ents, clusters = book_process(text)
     registry = process_registry(ents, clusters)
 
     print("Running SBERT and BART pipelines...")
@@ -196,7 +196,7 @@ def generate_distill_dataset():
     prepare_and_save_chunks(all_book_results)
 
 def test_folder():
-    books = list(iter_books(mode="test"))
+    books = list(iter_books(mode="validation"))
     all_book_results = []
     for _, text in books:
         doc_container, ents, clusters = book_process(text)

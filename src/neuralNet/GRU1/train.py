@@ -66,8 +66,8 @@ def train_model(training: bool):
                     # Zero the gradients
                     optimizer.zero_grad()
 
-                    # Forward pass
-                    predictions = model(batch_x, delta)
+                    #Forward pass
+                    predictions = model(batch_x, delta)                    
 
                     # Compute mse
                     loss = criterion(predictions, batch_y)
@@ -89,7 +89,9 @@ def train_model(training: bool):
                     optimizer.zero_grad()
 
                     # Forward pass
-                    predictions = model(batch_x, delta)
+                    #predictions = model(batch_x, delta)
+                    #Simulate no decay for eval
+                    predictions = model(batch_x, torch.zeros_like(delta))
 
                     # Compute mse
                     loss = criterion(predictions, batch_y)
