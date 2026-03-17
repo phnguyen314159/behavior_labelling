@@ -1,4 +1,7 @@
 #actually run model here
+
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,10 +9,10 @@ from torch.utils.data import TensorDataset, DataLoader
 
 # Import your custom modules
 # Adjust these import paths if your folder structure is slightly different
-from helpers import load_distill_data
-from bartDistil import WindowGRU
+from src.neuralNet.GRU1.helpers import load_first, load_all
+from src.neuralNet.GRU1.bartDistil import WindowGRU
 
-def train_model():
+def train_model(training: bool):
     # 1. Setup Device (Utilize that RTX 3060 we just fixed!)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"--- Training on device: {device} ---")
@@ -17,67 +20,104 @@ def train_model():
     # 2. Hyperparameters
     BATCH_SIZE = 8
     LEARNING_RATE = 1e-3
-    EPOCHS = 20 #read through entire dataset exactly 20 times.
+    EPOCHS = 50
+    BASE_DIR = Path(__file__).resolve().parent
 
     # 3. Load Data
     print("Loading distilled data...")
-    try:
-        encodings, labels = load_distill_data("distill_data.pt")
-        print(f"Encodings shape: {encodings.shape}") # Expected: [N, 100, 768]
-        print(f"Labels shape: {labels.shape}")       # Expected: [N, 100, 6]
-    except FileNotFoundError:
-        print("Error: 'distill_data.pt' not found. Run your helper.py extraction first!")
-        return
+    if not training:
+        try:
+            encodings, labels, deltas = load_first() #default only first book
+            print(f"Encodings shape: {encodings.shape}") # Expected: [N, 100, 768]
+            print(f"Labels shape: {labels.shape}")       # Expected: [N, 100, 6]
+        except FileNotFoundError:
+            print("Error: 'distill_data.pt' not found. Run your helper.py extraction first!")
+            return
+        dataset = TensorDataset(encodings, labels, deltas)
+        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+        sample=len(dataloader)
 
-    # 4. Create DataLoader
-    # TensorDataset pairs your input and target tensors together perfectly
-    dataset = TensorDataset(encodings, labels)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-
-    # 5. Initialize Model, Loss, and Optimizer
     model = WindowGRU(input_dim=768, hidden_dim=256, output_dim=6).to(device)
-    
-    # Mean Squared Error is standard for regression on continuous label dimensions
+
     criterion = nn.MSELoss() 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # 6. Training Loop
     print("\n--- Starting Training ---")
     model.train() # Set model to training mode
 
+    least_loss = 0
     for epoch in range(EPOCHS):
-        total_loss = 0.0
-        
-        for batch_idx, (batch_x, batch_y, delta) in enumerate(dataloader):
-            # Move data to the GPU
-            batch_x = batch_x.to(device)
-            batch_y = batch_y.to(device)
-            delta = delta.to(device)
+        total_loss = 0.0 
+        #epoch will connsist of all batches per each book
+        if training:
+            data_gen = load_all()
+            for encodings, labels, deltas in data_gen:
+                sample+=len(dataloader)
+                dataset = TensorDataset(encodings, labels, deltas)
+                dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+            
+                for batch_idx, (batch_x, batch_y, delta) in enumerate(dataloader):
+                    # Move data to the GPU
+                    batch_x = batch_x.to(device)
+                    batch_y = batch_y.to(device)
+                    delta = delta.to(device)
 
-            # Zero the gradients
-            optimizer.zero_grad()
+                    # Zero the gradients
+                    optimizer.zero_grad()
 
-            # Forward pass
-            predictions = model(batch_x, delta)
+                    # Forward pass
+                    predictions = model(batch_x, delta)
 
-            # Compute loss
-            loss = criterion(predictions, batch_y)
+                    # Compute mse
+                    loss = criterion(predictions, batch_y)
 
-            # Backward pass and optimize
-            loss.backward()
-            optimizer.step()
+                    # Backward pass and optimize
+                    loss.backward()
+                    optimizer.step()
 
-            total_loss += loss.item()
+                    total_loss += loss.item()
+                
+        else: 
+            for batch_idx, (batch_x, batch_y, delta) in enumerate(dataloader):
+                    # Move data to the GPU
+                    batch_x = batch_x.to(device)
+                    batch_y = batch_y.to(device)
+                    delta = delta.to(device)
+
+                    # Zero the gradients
+                    optimizer.zero_grad()
+
+                    # Forward pass
+                    predictions = model(batch_x, delta)
+
+                    # Compute mse
+                    loss = criterion(predictions, batch_y)
+
+                    # Backward pass and optimize
+                    loss.backward()
+                    optimizer.step()
+
+                    total_loss += loss.item()
 
         # Print average loss for the epoch
-        avg_loss = total_loss / len(dataloader)
+        avg_loss = total_loss / sample
         current_alpha = model.alpha.item()
+        if least_loss > avg_loss:
+            least_loss = avg_loss
+            save_path = BASE_DIR / "gru1_learned_labeler.pth"
+            torch.save(model.state_dict(), save_path)
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Average Loss: {avg_loss:.4f} | Alpha: {current_alpha:.4f}")
 
-    # 7. Save the trained model
-    save_path = "gru1_learned_labeler.pth"
-    torch.save(model.state_dict(), save_path)
-    print(f"\nTraining complete! Model saved to {save_path}")
+    print("\nTraining complete! Model saved")
 
 if __name__ == "__main__":
-    train_model()
+    import argparse
+    parser = argparse.ArgumentParser() # No description needed
+    parser.add_argument("-t", "--training", action="store_true")
+    parser.add_argument("-v", "--validating", action="store_true")
+    args = parser.parse_args()
+
+    if args.training:
+        train_model(True)
+    if args.validating:
+        train_model(False)

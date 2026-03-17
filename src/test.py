@@ -4,17 +4,15 @@ import sys
 import os
 import numpy as np
 import pytest
-from src.processData.textPipeline import iter_books, book_process, global_ent, cluster_container, process_registry
+from src.processData.textPipeline import iter_books, book_process, process_registry
 from src.NNrun import data_pipeline_helper, models
 from src.neuralNet.zeroshot import calculate_w_vector
+from src.neuralNet.GRU1.helpers import prepare_and_save_chunks
 
 def test_pipeline_with_real_data():
     """
     Test the pipeline using the actual files in data/book/test.
     """
-    # 1. Clear global containers to start fresh for the test
-    global_ent.clear()
-    cluster_container.clear() 
     
     # 2. Get the first book from the test folder
     # iter_books yields (book_id, text)
@@ -28,15 +26,15 @@ def test_pipeline_with_real_data():
 
     # 3. Process the book
     # This runs sliding_window, NER extraction, and coref logic
-    doc_container = book_process(text)
+    doc_container, ents, clusters = book_process(text)
 
     # 4. Verify Results
     # Check that we actually extracted data
     assert len(doc_container) > 0, "Pipeline failed to produce doc chunks"
-    assert len(global_ent) > 0, "No PERSON entities were extracted from the test file"
+    assert len(ents) > 0, "No PERSON entities were extracted from the test file"
 
     # 5. Schema Validation for the first entity
-    sample_ent = global_ent[0]
+    sample_ent = ents[0]
     required_keys = [
         "type", "text", "global_start", "global_end", 
         "doc_id", "doc_token_pos", "sentence_id"
@@ -48,15 +46,15 @@ def test_pipeline_with_real_data():
     # Verify doc_token_pos is a tuple for span access
     assert isinstance(sample_ent["doc_token_pos"], tuple)
     
-    print(f"Test Passed: Extracted {len(global_ent)} entities from {book_id}")
+    print(f"Test Passed: Extracted {len(ents)} entities from {book_id}")
 
     # 6. Test Registry Builder
-    registry = process_registry(global_ent, cluster_container)
+    registry = process_registry(ents, clusters)
     
     # Verify the registry output schema
     assert isinstance(registry, dict), "Registry must be a dictionary"
     
-    if len(global_ent) > 0:
+    if len(ents) > 0:
         assert len(registry) > 0, "Registry failed to build unique person buckets"
         
         # Check schema of the first unique person bucket
@@ -83,16 +81,13 @@ def test_zeroshot_behavioral_pipeline():
     """
     Test the full integration from text processing to behavioral vector generation.
     """
-    # 1. Setup Data (Clear previous state)
-    global_ent.clear()
-    cluster_container.clear()
     
     books = list(iter_books(mode="test"))
     book_id, text = books[0]
     
     # Process a limited amount of text for a faster test
-    doc_container = book_process(text[:20000]) 
-    registry = process_registry(global_ent, cluster_container)
+    doc_container, ents, clusters = book_process(text[:20000])
+    registry = process_registry(ents, clusters)
 
     # 2. Run Behavioral Pipeline
     # This invokes NNrun -> sceneGenerator -> zeroshot
@@ -137,14 +132,12 @@ def test_zeroshot_behavioral_pipeline():
         print("-" * 85)
 
 def test_encoding():
-    global_ent.clear()
-    cluster_container.clear()
     
     books = list(iter_books(mode="test"))
     book_id, text = books[0]
 
-    doc_container = book_process(text[:20000]) 
-    registry = process_registry(global_ent, cluster_container)
+    doc_container, ents, clusters = book_process(text[:20000])
+    registry = process_registry(ents, clusters)
 
     all_results = data_pipeline_helper(doc_container, registry, [models.ENCODE])
     encode_results = all_results.get("ENCODE", {})
@@ -188,27 +181,31 @@ def generate_distill_dataset():
     Run BOTH the encoding and zeroshot pipelines, then save the chunked data for the GRU.
     """
     print("\n--- Starting Data Extraction for GRU ---")
-    global_ent.clear()
-    cluster_container.clear()
     
     books = list(iter_books(mode="test"))
     book_id, text = books[0]
     
     # Note: Using text[:20000] for a fast test. Remove slice for the full book.
-    doc_container = book_process(text[:20000]) 
-    registry = process_registry(global_ent, cluster_container)
+    doc_container, ents, clusters = book_process(text[:20000])
+    registry = process_registry(ents, clusters)
 
     print("Running SBERT and BART pipelines...")
-    all_results = data_pipeline_helper(doc_container, registry, [models.ENCODE, models.ZSHOT])
-    
-    bart_data_dict = all_results.get("ZSHOT", {})
-    sbert_data_dict = all_results.get("ENCODE", {})
-    
-    
-    from src.neuralNet.GRU1.helpers import prepare_and_save_chunks
-    
-    print("Pipeline complete. Distilling chunks...")
-    prepare_and_save_chunks(all_results)
+    all_results = data_pipeline_helper(doc_container, registry)
+    all_book_results = []
+    all_book_results.append(all_results)
+    prepare_and_save_chunks(all_book_results)
+
+def test_folder():
+    books = list(iter_books(mode="test"))
+    all_book_results = []
+    for _, text in books:
+        doc_container, ents, clusters = book_process(text)
+        registry = process_registry(ents, clusters)
+        all_results =  data_pipeline_helper(doc_container, registry)
+        all_book_results.append(all_results)
+        #due to how we handle the data on the gru helper side, we dont have to clarify book differences at of now, but in future version that could change
+    prepare_and_save_chunks(all_book_results)
+
     
 if __name__ == "__main__":
     #run from code as root
@@ -220,6 +217,7 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--bart", action="store_true")
     parser.add_argument("-e", "--encode", action="store_true")
     parser.add_argument("-d", "--distill", action="store_true")
+    parser.add_argument("-f", "--folder", action="store_true")
     args = parser.parse_args()
 
     if args.bart:
@@ -230,4 +228,7 @@ if __name__ == "__main__":
         test_encoding()
     if args.distill:
         generate_distill_dataset()
+    if args.folder:
+        test_folder()
+
     

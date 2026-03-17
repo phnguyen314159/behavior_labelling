@@ -7,7 +7,6 @@ from src.config import BATCH_SIZE
 # It is significantly faster than BART but still benefits from batching.
 encoder = SentenceTransformer('all-mpnet-base-v2', device='cuda')
 
-#TODO: ADD A PUBLIC CONTAINER AS PREFERENCE SO INSTEAD OF RETURN A BATCH OF RESULT, WE UPDATE THAT CONTAINER
 def process_observation_batch(scene_batch, processed_data):
     """
     Processes a character-specific batch through SBERT to generate 

@@ -17,6 +17,7 @@ class WindowGRU(nn.Module):
         
          # The fully connected linear layer to map the GRU hidden states to our 6 labels
         self.fc = nn.Linear(hidden_dim, output_dim)
+        self.hidden_dim = hidden_dim
         
     def forward(self, x, rel_pos):
         batch_size, seq_len, _ = x.size()

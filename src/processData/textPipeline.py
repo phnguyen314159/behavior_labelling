@@ -123,11 +123,6 @@ def score_mention(span):
     return score
 
 
-global_ent = []
-book_container = [] #propose for book id
-cluster_container = []
-registry = defaultdict(lambda: {"references": []})
-
 def token_person_ent(tok: Token): #helper for parent finding
     #Return the PERSON entity span containing tok, else None.
     if tok.ent_type_ != "PERSON":
@@ -166,9 +161,11 @@ def check_depend(doc: Doc, start: int, end: int, max_layers: int = 3): #parents 
     return None
 
 #containers: doc_container is a list of tuple (doc, metadata)
-#global_ent: list of all 
+#ents: list of all 
 def book_process(text):
     doc_container = []
+    ents = []
+    clusters = []
 
     #Rename 'offset' to 'context' because it contains the whole dict
     for doc, context in nlp.pipe(sliding_window(sent_nlp, text, WINDOW_SIZE, STEP), as_tuples=True): #add key to here too in front of in - completed
@@ -189,7 +186,7 @@ def book_process(text):
             cur_sent = get_local_sent_idx(ent.start_char, context["local_sent_spans"])
             sent_valid = (cur_sent is not None) and ((is_first and (0 <= cur_sent < LAST_INDEX)) or (is_last and (cur_sent > 0 or cur_sent == -1)) or (not is_first and not is_last and (0 < cur_sent < LAST_INDEX)))
             if ent.label_ == "PERSON" and sent_valid:
-                global_ent.append({
+                ents.append({
                     "type": "PERSON",
                     "text": ent.text,
                     "global_start": ent.start_char + chunk_start_offset, #key char pos of the 1st char of the ent
@@ -223,7 +220,7 @@ def book_process(text):
                         buffer = score
                         primary = (start, end)
                     # we only record link if primary is out of buffer zone to avoid checking primary in 2 different doc but actually same word, we can just link that using overlapping cluster
-                    #fix, streamline child_cluster linking directly into global_ent for easier access
+                    #fix, streamline child_cluster linking directly into ents for easier access
                 cur_sent = get_local_sent_idx(primary[0], context["local_sent_spans"])
                 sent_valid = (cur_sent is not None) and ((is_first and (0 <= cur_sent < LAST_INDEX)) or (is_last and (cur_sent > 1 or cur_sent == -1)) or (not is_first and not is_last and (1 < cur_sent < LAST_INDEX)))
                 if sent_valid:
@@ -233,7 +230,7 @@ def book_process(text):
                         
                 #all we care is: for doc of id x, what clusters it has, and what is the primary of that cluster (tuple position)
                 if buffer_ent != None:
-                    for ent in global_ent:
+                    for ent in ents:
                         if ent["doc_id"] == doc_id and ent["doc_token_pos"] == (buffer_ent.start, buffer_ent.end):
                         # Inject the new data element into 
                             ent["child_cluster"] = cluster_id
@@ -255,7 +252,7 @@ def book_process(text):
                             "local_span": [start, end]
                         })
 
-                cluster_container.append({
+                clusters.append({
                     "doc_id": doc_id,
                     "cluster_id": cluster_id,
                     "primary": primary,
@@ -268,16 +265,16 @@ def book_process(text):
             doc._.trf_data = None
         except Exception:
             pass
-    return doc_container
+    return doc_container, ents, clusters
 
 '''
 #TODO: CHECK CODE, need to fix this into method fittable to run with current pipeline
 #This code requirements:  
-# 1.fuzzy the global_ent to get a list of unique person we can use (5-7 is enough), but they must be unique
+# 1.fuzzy the ents to get a list of unique person we can use (5-7 is enough), but they must be unique
 #   i.run a simple 
 # 2.for each of the unique person we get: 
-#   i.use fuzzy to check global_ent against each unique person |||| example logic: for i, ent in enumerated(global_ent): if fuzzyFunct(ent.get("text")) == true: add index to that unique name bucket under list "ent"
-#   ii.for the ent above, check if we have "child_cluster" in ent, if they do, use the same above logic but with [cluster_id and ent's doc_id] to get the index from cluster_container, and add that index to this unique name bucket in list "cluster"
+#   i.use fuzzy to check ents against each unique person |||| example logic: for i, ent in enumerated(ents): if fuzzyFunct(ent.get("text")) == true: add index to that unique name bucket under list "ent"
+#   ii.for the ent above, check if we have "child_cluster" in ent, if they do, use the same above logic but with [cluster_id and ent's doc_id] to get the index from clusters, and add that index to this unique name bucket in list "cluster"
 # 3.once we get registry done, we will proceed to work with dups:
 #   i.for each unique person bucket, make 2 sets: ent_index and cluster_index
 #   ii.for each of the 2 set:
@@ -323,9 +320,9 @@ def fuzzy_match(s1, s2, threshold=0.8):
     """Helper for fuzzy string matching."""
     return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio() >= threshold
 
-def process_registry(global_ent, cluster_container):
-    # 1. fuzzy the global_ent to get a list of unique person we can use (5-7 is enough)
-    name_counts = Counter([ent["text"].strip() for ent in global_ent])
+def process_registry(ents, clusters):
+    # 1. fuzzy the ents to get a list of unique person we can use (5-7 is enough)
+    name_counts = Counter([ent["text"].strip() for ent in ents])
     unique_persons = []
     
     for name, _ in name_counts.most_common():
@@ -339,10 +336,10 @@ def process_registry(global_ent, cluster_container):
     # Build buckets holding sets of indices: { "Adder": {"ent": set(), "cluster": set()} }
     buckets = {up: {"ent": set(), "cluster": set()} for up in unique_persons}
     
-    for i, ent in enumerate(global_ent):
+    for i, ent in enumerate(ents):
         ent_text = ent["text"].strip()
         
-        # 2.i. use fuzzy to check global_ent against each unique person
+        # 2.i. use fuzzy to check ents against each unique person
         for up in unique_persons:
             if fuzzy_match(ent_text, up):
                 # add index to that unique name bucket under list "ent"
@@ -353,8 +350,8 @@ def process_registry(global_ent, cluster_container):
                     c_id = ent["child_cluster"]
                     d_id = ent["doc_id"]
                     
-                    # use [cluster_id and ent's doc_id] to get the index from cluster_container
-                    for j, cluster in enumerate(cluster_container):
+                    # use [cluster_id and ent's doc_id] to get the index from clusters
+                    for j, cluster in enumerate(clusters):
                         if cluster["cluster_id"] == c_id and cluster["doc_id"] == d_id:
                             # add that index to this unique name bucket in list "cluster"
                             buckets[up]["cluster"].add(j)
@@ -410,7 +407,7 @@ def process_registry(global_ent, cluster_container):
         
         # Populate PERSON mentions
         for e_idx in mb["ent"]:
-            ent = global_ent[e_idx]
+            ent = ents[e_idx]
             references.append({
                 "global_char_pos": ent["global_start"],
                 "text": ent["text"],
@@ -422,7 +419,7 @@ def process_registry(global_ent, cluster_container):
             
         # Populate COREF mentions
         for c_idx in mb["cluster"]:
-            clust = cluster_container[c_idx]
+            clust = clusters[c_idx]
             # Unpack the pronouns we saved in book_process
             for mention in clust.get("mentions", []):
                 references.append({

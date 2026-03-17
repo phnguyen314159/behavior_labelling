@@ -8,7 +8,6 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
     is_last = context.get("is_last", False)
     is_first = (current_doc_id == 0)
     
-    # 1. Standard Registry Filter
     doc_refs = [ref for ref in registry[target_name]["references"] if ref["doc_id"] == current_doc_id]
 
     from collections import defaultdict
@@ -30,7 +29,6 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
         if not sent_valid:
             continue
 
-        # 2. FIND CLAUSE HEADS (The new Clause-Level Prefix logic)
         clause_injections = []
         for token in sent:
             # We look for the start of dependent or coordinate clauses
@@ -42,14 +40,11 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
                         "label": f"[{target_name}'s clause] "
                     })
 
-        # 3. get doc-wise position
         sent_text = sent.text
         sent_start_offset = sent.start_char
-        
-        # Merge your registry refs with your new clause injections
+
         all_edits = []
-        
-        # Add registry mentions
+
         for ref in sent_map[sent_idx]:
             is_poss = ref.get("text", "").lower() in ["his", "her", "its", "their"] or ref.get("type") == "PRP$"
             all_edits.append({
@@ -60,12 +55,11 @@ def clean_persp(target_name, current_doc_id, doc_container, registry):
         # Add clause prefixes
         all_edits.extend(clause_injections)
 
-        # 4. APPLY EDITS (Reverse order so we dont have to manually keep track of char_pos shifting
+        #Reverse order so we dont have to manually keep track of char_pos shifting
         sorted_edits = sorted(all_edits, key=lambda x: x["start"], reverse=True)
         
         for edit in sorted_edits:
             s_local = edit["start"] - sent_start_offset
-            # Safety: Ensure s_local is within sentence bounds
             if 0 <= s_local <= len(sent_text):
                 sent_text = sent_text[:s_local] + edit["label"] + sent_text[s_local:]
 
@@ -82,19 +76,16 @@ def scene_prep_generator(doc_container, registry, target_name):
         is_first = (doc_id == 0)
         all_raw_sents = list(doc.sents)
         
-        # 1. INITIALIZE: Engage generator for the first milestone in this doc
         sentence_gen = clean_persp(target_name, doc_id, doc_container, registry)
         
         def get_next_f():
             try:
-                # Returns (f_idx, f_text) from your generator
                 return next(sentence_gen)
             except StopIteration:
                 return WINDOW_SIZE, None
 
         f_idx, f_text = get_next_f()
 
-        # 2. INNER LOOP: Chronological s_idx through the doc sentences
         for s_idx, sent in enumerate(doc.sents):
             # Deduplication and edge case Check
             if is_first:
@@ -107,7 +98,6 @@ def scene_prep_generator(doc_container, registry, target_name):
             if not sent_valid:
                 continue
 
-            # 3. PUSH LOGIC: Compare s_idx against f_idx
             if s_idx < f_idx:
                 # Keep pushing raw s_idx until we hit the milestone
                 sentence_queue.append(sent.text)
@@ -116,28 +106,24 @@ def scene_prep_generator(doc_container, registry, target_name):
                 # MILESTONE REACHED: Push f_idx
                 sentence_queue.append(f_text)
                 next_idx = s_idx + 1
-                # RE-ENGAGE: Immediately get new f_idx for the next milestone
                 
                 
-                # 4. THE "LAST CHECK": Push one more to complete the context
-                # We peek at s_idx + 1 to provide the 'Post' context
-                # edge case (last chunk), for all other cases we know because of dedup above we can do future peak, but not for last chunk where we let it iter to len-1
-                # we know that a chunk must always <WINDOW_SIZE, therefor we can easily know if we are at the very last line
+                #push one more to complete the context
+                #we peek at s_idx + 1 to provide the 'Post' context
+                #edge case (last chunk), for all other cases we know because of dedup above we can do future peak, but not for last chunk where we let it iter to len-1
+                #we know that a chunk must always <WINDOW_SIZE, therefor we can easily know if we are at the very last line
                 if next_idx < len(all_raw_sents): 
                     f_idx, f_text = get_next_f()
                     
-                    # If the very next line is also a milestone, push its fixed version
                     if next_idx == f_idx:
                         sentence_queue.append(f_text)
-                            # Re-engage again because we just consumed this milestone
                         f_idx, f_text = get_next_f()
                     else:
-                            # Otherwise, push the raw s_idx+1 neighbor
                         sentence_queue.append(all_raw_sents[next_idx].text)
                 final_chunk = " ".join(list(sentence_queue)).strip()
                 yield f"{prompt_prefix}{final_chunk}", (doc_id, s_idx) #change to simplify helper funct to get token span
 
-#TODO: change batch to update (add into a global container) instead of dump a list from batch               
+              
 def scene_batch_gen(doc_container, registry, M=BATCH_SIZE):
     # Initialize character-specific queues
     queues = {name: [] for name in registry.keys()}
@@ -149,17 +135,15 @@ def scene_batch_gen(doc_container, registry, M=BATCH_SIZE):
     while active_generators:
         for name in list(active_generators.keys()):
             try:
-                # 1. Busy Work: Pull the next scene for this character lens
                 text, context = next(active_generators[name])
                 queues[name].append((text, context))
                 
-                # 2. Threshold Check: If queue is size M, yield the batch
                 if len(queues[name]) == M:
-                    yield name, queues[name] # Yield the batch then clean queue
+                    yield name, queues[name]
                     queues[name] = []
                     
             except StopIteration:
-                # 3. Final Flush: Child generator died, yield remaining scenes
+                #if prep_gen is finish and batch is not, we get that batch, then clean memory
                 if queues[name]:
                     yield name, queues[name]
                 del active_generators[name]

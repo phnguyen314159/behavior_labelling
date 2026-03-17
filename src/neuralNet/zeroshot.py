@@ -33,24 +33,19 @@ classifier = pipeline("zero-shot-classification",
 
 #helper for weighted labels
 def calculate_w_vector(l_vector):
-    # 1. Split the 6D vector into Groups A and B
-    group_a_raw = np.array(l_vector[:3])
-    group_b_raw = np.array(l_vector[3:])
+    a = np.array(l_vector[:3])
+    b = np.array(l_vector[3:])
+
+    sum_a = np.sum(a)
+    sum_b = np.sum(b)
     
-    # 2. Competitive Rank between A and B (Global Softmax)
-    # This gives you aF and bF which sum to 1.0
-    sum_a = np.sum(group_a_raw)
-    sum_b = np.sum(group_b_raw)
+    scale = np.array([sum_a, sum_b])
+    aF, bF = np.exp(scale) / np.sum(np.exp(scale))
     
-    # Use softmax to make them competitive
-    global_logits = np.array([sum_a, sum_b])
-    aF, bF = np.exp(global_logits) / np.sum(np.exp(global_logits))
+    #this should scale down only the less dominated group
+    a_scaled = a * (aF / max(aF, bF))
+    b_scaled = b * (bF / max(aF, bF))
     
-    # this should scale down only the less dominated group
-    a_scaled = group_a_raw * (aF / max(aF, bF))
-    b_scaled = group_b_raw * (bF / max(aF, bF))
-    
-    # 4. Re-assemble into final 6D w_vector
     return np.concatenate([a_scaled, b_scaled]).tolist()
 
 def process_teacher_batch(scene_batch, processed_data):
@@ -62,9 +57,8 @@ def process_teacher_batch(scene_batch, processed_data):
     texts = [item[0] for item in scene_batch]
     indices = [item[1] for item in scene_batch]
 
-    BASE_BOOST = 0.05  # The 'nudge' per word match
+    BASE_BOOST = 0.05  
     
-    #Fix the Sequential Processing Warning
     dataset = Dataset.from_dict({"text": texts})
     results = classifier(KeyDataset(dataset, "text"), candidate_labels=LABELS, multi_label=True)
 
