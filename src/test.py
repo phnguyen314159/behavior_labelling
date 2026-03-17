@@ -11,11 +11,9 @@ def test_pipeline_with_real_data():
     """
     Test the pipeline using the actual files in data/book/test.
     """
-    # 1. Clear global containers to start fresh for the test
     global_ent.clear()
     cluster_container.clear() 
     
-    # 2. Get the first book from the test folder
     # iter_books yields (book_id, text)
     books = list(iter_books(mode="test"))
     
@@ -25,16 +23,13 @@ def test_pipeline_with_real_data():
     book_id, text = books[0]
     print(f"\nTesting with book: {book_id}")
 
-    # 3. Process the book
     # This runs sliding_window, NER extraction, and coref logic
     doc_container = book_process(text)
 
-    # 4. Verify Results
     # Check that we actually extracted data
     assert len(doc_container) > 0, "Pipeline failed to produce doc chunks"
     assert len(global_ent) > 0, "No PERSON entities were extracted from the test file"
 
-    # 5. Schema Validation for the first entity
     sample_ent = global_ent[0]
     required_keys = [
         "type", "text", "global_start", "global_end", 
@@ -49,23 +44,19 @@ def test_pipeline_with_real_data():
     
     print(f"Test Passed: Extracted {len(global_ent)} entities from {book_id}")
 
-    # 6. Test Registry Builder
     registry = process_registry(global_ent, cluster_container)
     
-    # Verify the registry output schema
     assert isinstance(registry, dict), "Registry must be a dictionary"
     
     if len(global_ent) > 0:
         assert len(registry) > 0, "Registry failed to build unique person buckets"
         
-        # Check schema of the first unique person bucket
         first_person = list(registry.keys())[1]
         assert "references" in registry[first_person], "Registry entry missing 'references' list"
         
         # Check schema of a reference item
         if len(registry[first_person]["references"]) > 0:
             sample_ref = registry[first_person]["references"][0]
-            # We removed the "type" assertion here!
             assert "text" in sample_ref, "Reference missing 'text' key"
             assert "global_char_pos" in sample_ref, "Reference missing 'global_char_pos' key"
             
@@ -77,12 +68,10 @@ def test_pipeline_with_real_data():
 
         print(result)
 
-# --- NEW IMPORTS ---
 def test_zeroshot_behavioral_pipeline():
     """
     Test the full integration from text processing to behavioral vector generation.
     """
-    # 1. Setup Data (Clear previous state)
     global_ent.clear()
     cluster_container.clear()
     
@@ -93,12 +82,9 @@ def test_zeroshot_behavioral_pipeline():
     doc_container = book_process(text[:20000]) 
     registry = process_registry(global_ent, cluster_container)
 
-    # 2. Run Behavioral Pipeline
-    # This invokes NNrun -> sceneGenerator -> zeroshot
     all_results = data_pipeline_helper(doc_container, registry, [models.ZSHOT])
     zshot_results = all_results.get("ZSHOT", {})
     
-    # 3. Assertions (Update these to use zshot_results)
     assert isinstance(all_results, dict), "Outer result should be a task dictionary"
     assert isinstance(zshot_results, dict), "ZSHOT results should be a char dictionary"
     
@@ -164,7 +150,6 @@ def test_encoding():
             vector_len = len(sample["obs_vector"])
             assert vector_len == 768, f"Expected 768d vector, got {vector_len}d"
 
-    # 4. Printing the results
     # Since 768 is too long to print, we show just the first 5 dimensions
     candidate = list(encode_results.keys())[:2]
 
@@ -188,20 +173,16 @@ def cache_zeroshot_pipeline():
     """
     print("\n--- Starting Heavy ZSHOT Caching (Validation Set) ---")
     
-    # 1. Swap to your validation folder
     books = list(iter_books(mode="validation"))
     
-    # 2. Grab just the first 3 books
     books_to_process = books[:3]
     print(f"Found {len(books)} validation books. Processing the first 3...")
     
-    # 3. Master dictionary to hold everyone's data
     master_zshot_data = {}
     
     for i, (book_id, text) in enumerate(books_to_process):
         print(f"\n[{i+1}/3] Processing book: {book_id}")
         
-        # CRITICAL: Clear global containers inside the loop so books don't bleed into each other!
         global_ent.clear()
         cluster_container.clear()
         
@@ -212,9 +193,7 @@ def cache_zeroshot_pipeline():
         all_results = data_pipeline_helper(doc_container, registry, [models.ZSHOT])
         book_zshot_data = all_results.get("ZSHOT", {})
         
-        # 4. Safely merge this book's characters into the master dictionary
         for char_name, data_list in book_zshot_data.items():
-            # Create a unique ID like "Book1_John" to prevent cross-book contamination
             unique_char_name = f"{book_id}_{char_name}"
             
             if unique_char_name not in master_zshot_data:
@@ -222,7 +201,6 @@ def cache_zeroshot_pipeline():
                 
             master_zshot_data[unique_char_name].extend(data_list)
             
-    # 5. Save the massive combined dictionary!
     print("\n--- All books processed! Saving Cache ---")
     from src.neuralNet.GRU1.helpers import save_zshot_cache
     save_zshot_cache(master_zshot_data, "zshot_cache_val_3books.pt")
@@ -236,7 +214,6 @@ def generate_distill_dataset():
     
     from src.neuralNet.GRU1.helpers import load_zshot_cache, prepare_and_save_chunks
     
-    # 1. Load the heavy BART data instantly
     try:
         print("Loading cached ZSHOT data...")
         bart_data_dict = load_zshot_cache("zshot_cache_val_3books.pt")
@@ -244,17 +221,14 @@ def generate_distill_dataset():
         print("Error: Cache not found! Run with -cz first to generate the ZSHOT cache.")
         return
 
-    # 2. Grab the EXACT same 3 validation books
     books = list(iter_books(mode="validation"))
     books_to_process = books[:3]
     
     master_encode_data = {}
 
-    # 3. Process the books for SBERT
     for i, (book_id, text) in enumerate(books_to_process):
         print(f"\n[{i+1}/3] Processing book for SBERT: {book_id}")
         
-        # CRITICAL: Clear containers for each book to prevent bleed
         global_ent.clear()
         cluster_container.clear()
         
@@ -265,7 +239,6 @@ def generate_distill_dataset():
         book_results = data_pipeline_helper(doc_container, registry, [models.ENCODE])
         book_encode_data = book_results.get("ENCODE", {})
         
-        # 4. Format keys to match the BART cache (BookID_CharName)
         for char_name, data_list in book_encode_data.items():
             unique_char_name = f"{book_id}_{char_name}"
             
@@ -274,16 +247,13 @@ def generate_distill_dataset():
                 
             master_encode_data[unique_char_name].extend(data_list)
 
-    # 5. Stitch them together
     print("\n--- All books encoded! Distilling chunks... ---")
     
-    # Create the combined dictionary that prepare_and_save_chunks expects
     all_results = {
         "ZSHOT": bart_data_dict,
         "ENCODE": master_encode_data
     }
     
-    # Pass it to your helper and save it as a validation-specific chunk file
     prepare_and_save_chunks(all_results, filename="distill_data_val.pt")
     
 if __name__ == "__main__":

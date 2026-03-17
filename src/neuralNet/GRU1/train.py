@@ -25,19 +25,16 @@ def train_model():
         print("Error: 'distill_data_val.pt' not found. Run your helper.py extraction first!")
         return
 
-    # 4. Create DataLoader
-    # TensorDataset pairs your input and target tensors together perfectly
+    # TensorDataset pairs the input and target tensors together here
     dataset = TensorDataset(encodings, labels)
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    # 5. Initialize Model, Loss, and Optimizer
     model = WindowGRU(input_dim=768, hidden_dim=256, output_dim=6).to(device)
     
     # Mean Squared Error is standard for regression on continuous label dimensions
     criterion = nn.MSELoss() 
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # 6. Training Loop
     print("\n--- Starting Training ---")
     model.train() # Set model to training mode
 

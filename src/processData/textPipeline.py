@@ -3,11 +3,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# 1. Bypass the Microsoft STL version check (STL1002) and the unsupported version check
+#Bypass the Microsoft STL version check (STL1002) and the unsupported version check
 # We pass -Xcompiler to tell nvcc to send the /D macro directly to the C++ compiler
 os.environ["NVCC_APPEND_FLAGS"] = "-allow-unsupported-compiler -Xcompiler /D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"
 
-# 2. Maintain your existing path injections
 msvc_bin = os.environ.get("MSVC_PATH")
 if msvc_bin:
     msvc_bin = os.path.normpath(msvc_bin) 
@@ -170,7 +169,7 @@ def check_depend(doc: Doc, start: int, end: int, max_layers: int = 3): #parents 
 def book_process(text):
     doc_container = []
 
-    #Rename 'offset' to 'context' because it contains the whole dict
+    #rename 'offset' to 'context' because it contains the whole dict
     for doc, context in nlp.pipe(sliding_window(sent_nlp, text, WINDOW_SIZE, STEP), as_tuples=True): #add key to here too in front of in - completed
         # Save BOTH doc and context as a tuple.
         # This prepares the data for the Registry step without needing a re-run, since doc get overwrite with each pipe run
@@ -238,7 +237,6 @@ def book_process(text):
                         # Inject the new data element into 
                             ent["child_cluster"] = cluster_id
    
-                # --- NEW CODE TO EXTRACT PRONOUN/COREF TEXT ---
                 mentions = []
                 for item in cluster:
                     if item is None or item == primary:
@@ -286,7 +284,7 @@ def book_process(text):
 #       III.meanwhile, if cluster set intersect pass a certain percentage, say 40-50? we also merge the 2 unique person bucket in the registry
 
 
-what i want register to looks like: one error, we named global_start as global_char_pos in final registry
+register should look like: 
 registry = {
     "Adder": {
         "references": [
@@ -324,31 +322,27 @@ def fuzzy_match(s1, s2, threshold=0.8):
     return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio() >= threshold
 
 def process_registry(global_ent, cluster_container):
-    # 1. fuzzy the global_ent to get a list of unique person we can use (5-7 is enough)
     name_counts = Counter([ent["text"].strip() for ent in global_ent])
     unique_persons = []
     
     for name, _ in name_counts.most_common():
         if len(unique_persons) >= 7:
             break
-        # 1.i. run a simple check to ensure they are unique
         if not any(fuzzy_match(name, up) for up in unique_persons):
             unique_persons.append(name)
 
-    # 2. for each of the unique person we get:
+    # for each of the unique person we get:
     # Build buckets holding sets of indices: { "Adder": {"ent": set(), "cluster": set()} }
     buckets = {up: {"ent": set(), "cluster": set()} for up in unique_persons}
     
     for i, ent in enumerate(global_ent):
         ent_text = ent["text"].strip()
         
-        # 2.i. use fuzzy to check global_ent against each unique person
         for up in unique_persons:
             if fuzzy_match(ent_text, up):
                 # add index to that unique name bucket under list "ent"
                 buckets[up]["ent"].add(i)
                 
-                # 2.ii. check if we have "child_cluster" in ent
                 if "child_cluster" in ent:
                     c_id = ent["child_cluster"]
                     d_id = ent["doc_id"]
@@ -360,21 +354,16 @@ def process_registry(global_ent, cluster_container):
                             buckets[up]["cluster"].add(j)
                 break # Move to next ent once a bucket is found
 
-    # 3. once we get registry done, we will proceed to work with dups
     merged_registry = []
     
     for up, data in buckets.items():
-        # 3.i. for each unique person bucket, make 2 sets: ent_index and cluster_index
         ent_set = data["ent"]
         cluster_set = data["cluster"]
         
         has_merged = False
-        # 3.ii. for each of the 2 set:
         for mb in merged_registry:
-            # 3.ii.I. compare the set between 2 unique person using intersection of sets
             ent_intersect = len(ent_set.intersection(mb["ent"])) > 0
             
-            # 3.ii.III. meanwhile, if cluster set intersect pass a certain percentage (40%)
             cluster_intersect = False
             if len(cluster_set) > 0 and len(mb["cluster"]) > 0:
                 overlap = len(cluster_set.intersection(mb["cluster"]))
@@ -382,7 +371,6 @@ def process_registry(global_ent, cluster_container):
                 if (overlap / min_len) >= 0.4:
                     cluster_intersect = True
                     
-            # 3.ii.II. if intersect in ent_index at all (or cluster >= 40%), merge those 2
             if ent_intersect or cluster_intersect:
                 mb["ent"].update(ent_set)
                 mb["cluster"].update(cluster_set)
@@ -401,7 +389,7 @@ def process_registry(global_ent, cluster_container):
                 "cluster": cluster_set
             })
 
-    # Build the final output dictionary
+    # final output dictionary
     registry = {}
     
     for mb in merged_registry:
@@ -417,13 +405,13 @@ def process_registry(global_ent, cluster_container):
                 "doc_id": ent['doc_id'],
                 "local_line": ent.get("sentence_id", -1),
                 "local_span": list(ent["doc_token_pos"]),
-                "type": "PERSON"  # <-- Added back!
+                "type": "PERSON"  
             })
             
         # Populate COREF mentions
         for c_idx in mb["cluster"]:
             clust = cluster_container[c_idx]
-            # Unpack the pronouns we saved in book_process
+            # Unpack the pronouns saved in book_process
             for mention in clust.get("mentions", []):
                 references.append({
                     "global_char_pos": mention["global_char_pos"], #bug
@@ -431,7 +419,7 @@ def process_registry(global_ent, cluster_container):
                     "doc_id": ent['doc_id'],
                     "local_line": mention["local_line"],
                     "local_span": mention["local_span"],
-                    "type": "COREF"  # <-- Added back!
+                    "type": "COREF"  
                 })
             
         registry[primary_name] = {"references": references}
