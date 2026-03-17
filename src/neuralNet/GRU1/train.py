@@ -1,5 +1,6 @@
 #actually run model here
-
+from scipy.stats import pearsonr, spearmanr
+import numpy as np
 from pathlib import Path
 
 import torch
@@ -103,6 +104,27 @@ def train_model(training: bool):
         avg_loss = total_loss / sample
         current_alpha = model.alpha.item()            
         print(f"Epoch [{epoch+1}/{EPOCHS}] | Average Loss: {avg_loss:.4f} | Alpha: {current_alpha:.4f}")
+        model.eval() #not training
+        all_preds = []
+        all_targets = []
+
+        with torch.no_grad(): #no backprop
+            for batch_x, batch_y, delta in dataloader:
+                preds = model(batch_x.to(device), delta.to(device)) #prefiction - forward pass
+                all_preds.append(preds.cpu().numpy())
+                all_targets.append(batch_y.numpy())
+        #in cur implementations, we dont care of char-pivot at this point (not train to learn character)
+        all_preds = np.concatenate(all_preds, axis=0).reshape(-1, 6)
+        all_targets = np.concatenate(all_targets, axis=0).reshape(-1, 6)
+
+        print("\n--- Distillation Fidelity (Correlation) ---")
+        dimensions = ['Logic', 'Perception', 'Knowledge', 'Fear', 'Desire', 'Stress']
+        for i, name in enumerate(dimensions):
+            p_corr, _ = pearsonr(all_targets[:, i], all_preds[:, i])
+            s_corr, _ = spearmanr(all_targets[:, i], all_preds[:, i])
+            print(f"{name} - Pearson: {p_corr:.4f}, Spearman: {s_corr:.4f}")
+
+        model.train()
         
     save_path = "gru1_learned_labeler.pth"
     torch.save(model.state_dict(), save_path)
@@ -110,7 +132,7 @@ def train_model(training: bool):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser() # No description needed
+    parser = argparse.ArgumentParser() 
     parser.add_argument("-t", "--training", action="store_true")
     parser.add_argument("-v", "--validating", action="store_true")
     args = parser.parse_args()
